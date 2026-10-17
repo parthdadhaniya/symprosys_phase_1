@@ -1,3 +1,10 @@
+"""Celery worker and task queue initialization module.
+
+Configures the Celery application with Redis as broker and backend,
+enforcing JSON serialization, UTC timestamps, task execution tracking,
+and configurable eager task execution.
+"""
+
 from celery import Celery
 from app.core.config import settings
 
@@ -18,4 +25,3 @@ celery_app.conf.update(
     task_time_limit=300,
     task_always_eager=settings.CELERY_TASK_ALWAYS_EAGER,
 )
-

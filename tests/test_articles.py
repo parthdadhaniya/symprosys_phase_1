@@ -1,3 +1,17 @@
+"""Automated unit and integration test suite for the News Article service.
+
+Verifies:
+- Service health endpoint
+- Article creation, validations, and duplicate URL conflicts (409)
+- Pagination, page boundaries, and X-Total-Count headers
+- Company name and processing status filtering
+- Single article retrieval and 404 errors
+- Deterministic classification taxonomy accuracy across all categories
+- Journalistic extractive summarization logic and fallbacks
+- Full asynchronous processing pipeline and status transitions
+- Manual task trigger endpoint (202 Accepted)
+"""
+
 import uuid
 import pytest
 from httpx import AsyncClient
@@ -9,6 +23,7 @@ from app.tasks.article_tasks import process_article_sync
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient):
+    """Test the /health endpoint returns HTTP 200 and healthy status."""
     response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
@@ -16,6 +31,7 @@ async def test_health_check(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_article_success(client: AsyncClient):
+    """Test successful article creation returns HTTP 201 with populated metadata."""
     unique_slug = uuid.uuid4().hex[:8]
     payload = {
         "company_name": "Tech Corp",
@@ -40,6 +56,7 @@ async def test_create_article_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_article_duplicate_url(client: AsyncClient):
+    """Test creating an article with a duplicate URL raises HTTP 409 Conflict."""
     unique_slug = uuid.uuid4().hex[:8]
     payload = {
         "company_name": "Unique Media",
@@ -60,6 +77,7 @@ async def test_create_article_duplicate_url(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_article_validation_errors(client: AsyncClient):
+    """Test payload validation: missing fields, empty strings, invalid URLs, and invalid statuses."""
     # Missing required field company_name
     res_missing = await client.post(
         "/articles",
@@ -96,6 +114,7 @@ async def test_create_article_validation_errors(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_articles_pagination_and_headers(client: AsyncClient):
+    """Test paginated listing returns correct pagination schema and X-Total-Count header."""
     response = await client.get("/articles?page=1&limit=5")
     assert response.status_code == 200
     data = response.json()
@@ -111,6 +130,7 @@ async def test_get_articles_pagination_and_headers(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_articles_filters(client: AsyncClient):
+    """Test filtering articles by company_name substring and status enum."""
     unique_company = f"Company_{uuid.uuid4().hex[:6]}"
     unique_slug = uuid.uuid4().hex[:8]
 
@@ -147,6 +167,7 @@ async def test_get_articles_filters(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_article_by_id_and_not_found(client: AsyncClient):
+    """Test retrieving article by ID and 404 response for missing IDs."""
     unique_slug = uuid.uuid4().hex[:8]
     create_res = await client.post(
         "/articles",
@@ -173,6 +194,7 @@ async def test_get_article_by_id_and_not_found(client: AsyncClient):
 # --- Classification & Summarization Tests ---
 
 def test_deterministic_classifier_example_input():
+    """Verify classifier produces 'Automotive' for the example specification."""
     title = "Company announces investment in a new electric vehicle plant"
     content = "The company will invest $2 billion to expand vehicle production and create jobs."
     category = ArticleClassifier.classify(title=title, content=content)
@@ -180,6 +202,7 @@ def test_deterministic_classifier_example_input():
 
 
 def test_deterministic_classifier_categories():
+    """Verify classification accuracy across multiple distinct domain categories."""
     # Technology
     assert ArticleClassifier.classify("Tech Giant Unveils New Artificial Intelligence Cloud Platform") == "Technology"
     # Healthcare
@@ -193,6 +216,7 @@ def test_deterministic_classifier_categories():
 
 
 def test_deterministic_summarizer():
+    """Verify extractive lead summarization and fallback when content is empty."""
     title = "Company announces investment in a new electric vehicle plant"
     content = "The company will invest $2 billion to expand vehicle production and create jobs. Operations will commence in 2027."
     summary = ArticleSummarizer.summarize(title=title, content=content)
@@ -206,6 +230,7 @@ def test_deterministic_summarizer():
 
 @pytest.mark.asyncio
 async def test_async_article_processing_pipeline(client: AsyncClient):
+    """Verify the full asynchronous processing lifecycle from Pending to Completed."""
     unique_slug = uuid.uuid4().hex[:8]
     payload = {
         "company_name": "NextGen Motors",
@@ -235,6 +260,7 @@ async def test_async_article_processing_pipeline(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_trigger_process_endpoint(client: AsyncClient):
+    """Verify manual task queuing via POST /articles/{id}/process returns HTTP 202."""
     unique_slug = uuid.uuid4().hex[:8]
     create_res = await client.post(
         "/articles",

@@ -1,11 +1,16 @@
+"""Deterministic extractive summarization engine for news articles.
+
+Selects informative sentences using journalistic inverted pyramid weighting,
+prioritizing lead sentences, numerical metrics, financial commitments, and core action verbs.
+"""
+
 import re
-from typing import List, Optional
+from typing import Optional
 
 
 class ArticleSummarizer:
-    """
-    Deterministic extractive summarizer for news articles.
-    
+    """Deterministic extractive summarizer for news articles.
+
     Extracts the key leading informative sentences (focusing on the lead statement,
     numerical data, key investments, or primary thesis) without requiring an LLM.
     """
@@ -18,15 +23,23 @@ class ArticleSummarizer:
         max_sentences: int = 2,
         max_length: int = 350,
     ) -> str:
-        """
-        Generate a concise, deterministic summary from article content or title.
+        """Generate a concise, deterministic summary from article content or headline.
+
+        Args:
+            title (str): Article title/headline.
+            content (Optional[str]): Full body text of the article.
+            max_sentences (int): Maximum number of sentences to include in the summary.
+            max_length (int): Maximum character length for the generated summary.
+
+        Returns:
+            str: The generated concise summary string.
         """
         if not content or not content.strip():
             # If no content is provided, return a cleaned title summary
             return title.strip()
 
         cleaned_content = re.sub(r"\s+", " ", content.strip())
-        
+
         # Split into individual sentences
         raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned_content)
         sentences = [s.strip() for s in raw_sentences if s.strip()]
@@ -37,11 +50,11 @@ class ArticleSummarizer:
         # Score sentences based on journalistic importance:
         # 1. Lead sentence boost (journalistic inverted pyramid style)
         # 2. Presence of numbers/currencies/data (investments, metrics)
-        # 3. Sentence length (avoid fragments or excessively long sentences)
+        # 3. Key corporate action verbs
         scored_sentences = []
         for idx, sentence in enumerate(sentences):
             score = 0.0
-            
+
             # Position bias: first sentence is typically the news lead
             if idx == 0:
                 score += 5.0
@@ -50,12 +63,20 @@ class ArticleSummarizer:
             else:
                 score += 1.0
 
-            # Data/financial indicators ($2 billion, 50%, etc.)
-            if re.search(r"(\$|€|£|¥|\d+(?:\.\d+)?%|\b\d+\s*(?:billion|million|trillion|jobs|plants?)\b)", sentence, re.IGNORECASE):
+            # Data/financial indicators ($2 billion, 50%, jobs, etc.)
+            if re.search(
+                r"(\$|€|£|¥|\d+(?:\.\d+)?%|\b\d+\s*(?:billion|million|trillion|jobs|plants?)\b)",
+                sentence,
+                re.IGNORECASE,
+            ):
                 score += 3.0
 
             # Action/corporate keywords
-            if re.search(r"\b(invest|invested|investment|announces?|expanded?|production|acquired|launched|opened)\b", sentence, re.IGNORECASE):
+            if re.search(
+                r"\b(invest|invested|investment|announces?|expanded?|production|acquired|launched|opened)\b",
+                sentence,
+                re.IGNORECASE,
+            ):
                 score += 2.0
 
             scored_sentences.append((score, idx, sentence))
@@ -73,4 +94,3 @@ class ArticleSummarizer:
             summary_text = summary_text[:max_length].rsplit(" ", 1)[0] + "..."
 
         return summary_text
-

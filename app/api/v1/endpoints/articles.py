@@ -1,4 +1,15 @@
-from typing import Optional
+"""REST API router endpoints for Article ingestion, pagination, filtering, and management.
+
+Provides handlers for:
+- POST /articles: Create new article and enqueue async processing.
+- POST /articles/{id}/process: Manually trigger or retry async processing.
+- GET /articles: Paginated article retrieval with company name and status filters.
+- GET /articles/{id}: Retrieve single article by ID.
+- PUT /articles/{id}: Partial or full article update.
+- DELETE /articles/{id}: Delete article by ID.
+"""
+
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,17 +42,16 @@ async def create_article(
     article_in: ArticleCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-):
-    """
-    Create a new article and queue it for asynchronous classification and summarization.
-    
-    - **company_name**: Name of the company (required)
-    - **title**: Article title (required)
-    - **url**: Article URL (must be unique HTTP/HTTPS URL)
-    - **content**: Full text content (optional)
-    - **status**: Status ('Pending', 'Processing', 'Completed', 'Failed')
-    - **category**: Article category (optional)
-    - **summary**: Article summary (optional)
+) -> ArticleResponse:
+    """Create a new article and queue it for asynchronous classification and summarization.
+
+    Args:
+        article_in (ArticleCreate): Article payload.
+        background_tasks (BackgroundTasks): Local background task queue for fallback.
+        db (AsyncSession): Injected async database session.
+
+    Returns:
+        ArticleResponse: Newly created article in 'Pending' state.
     """
     return await ArticleService.create_article(
         db=db, article_in=article_in, background_tasks=background_tasks
@@ -61,9 +71,19 @@ async def trigger_article_processing(
     article_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-):
-    """
-    Trigger or retry asynchronous classification and summarization for a specific article.
+) -> Dict[str, Any]:
+    """Trigger or retry asynchronous classification and summarization for a specific article.
+
+    Args:
+        article_id (int): Primary key ID of the article to process.
+        background_tasks (BackgroundTasks): Local background task queue for fallback.
+        db (AsyncSession): Injected async database session.
+
+    Raises:
+        HTTPException: 404 Not Found if the article ID does not exist.
+
+    Returns:
+        Dict[str, Any]: Confirmation message and article status.
     """
     article = await ArticleService.get_article(db=db, article_id=article_id)
     if not article:
@@ -102,20 +122,26 @@ async def list_articles(
         max_length=255,
         description="Filter by company name (case-insensitive substring match)",
     ),
-    status: Optional[ArticleStatus] = Query(
+    status_filter: Optional[ArticleStatus] = Query(
         None,
+        alias="status",
         description="Filter by article status: Pending, Processing, Completed, Failed",
     ),
     db: AsyncSession = Depends(get_db),
-):
-    """
-    Retrieve articles with pagination and optional filters.
-    
-    - **page**: Page number (default: 1)
-    - **limit**: Page size limit (default: 10, max: 100)
-    - **skip**: Optional raw offset override
-    - **company_name**: Optional company name filter
-    - **status**: Optional status filter
+) -> PaginatedArticleResponse:
+    """Retrieve articles with pagination and optional filters.
+
+    Args:
+        response (Response): FastAPI response to attach headers.
+        page (int): Page number (1-indexed).
+        limit (int): Items per page.
+        skip (Optional[int]): Optional offset override.
+        company_name (Optional[str]): Company substring filter.
+        status_filter (Optional[ArticleStatus]): Article processing status filter.
+        db (AsyncSession): Injected async database session.
+
+    Returns:
+        PaginatedArticleResponse: Enveloped response containing total count, page, items.
     """
     calculated_skip = skip if skip is not None else (page - 1) * limit
     current_page = (calculated_skip // limit) + 1
@@ -125,7 +151,7 @@ async def list_articles(
         skip=calculated_skip,
         limit=limit,
         company_name=company_name,
-        status=status,
+        status=status_filter,
     )
 
     total_pages = (total + limit - 1) // limit if total > 0 else 0
@@ -153,7 +179,19 @@ async def list_articles(
 async def get_article(
     article_id: int,
     db: AsyncSession = Depends(get_db),
-):
+) -> ArticleResponse:
+    """Retrieve details of a single article by ID.
+
+    Args:
+        article_id (int): Primary key ID of the article.
+        db (AsyncSession): Injected async database session.
+
+    Raises:
+        HTTPException: 404 Not Found if article is missing.
+
+    Returns:
+        ArticleResponse: Complete article details.
+    """
     article = await ArticleService.get_article(db=db, article_id=article_id)
     if not article:
         raise HTTPException(
@@ -178,7 +216,20 @@ async def update_article(
     article_id: int,
     article_in: ArticleUpdate,
     db: AsyncSession = Depends(get_db),
-):
+) -> ArticleResponse:
+    """Update attributes of an existing article.
+
+    Args:
+        article_id (int): ID of the article to update.
+        article_in (ArticleUpdate): Updated field values.
+        db (AsyncSession): Injected async database session.
+
+    Raises:
+        HTTPException: 404 if not found, 409 if URL conflicts with another record.
+
+    Returns:
+        ArticleResponse: The updated article representation.
+    """
     article = await ArticleService.get_article(db=db, article_id=article_id)
     if not article:
         raise HTTPException(
@@ -202,7 +253,16 @@ async def update_article(
 async def delete_article(
     article_id: int,
     db: AsyncSession = Depends(get_db),
-):
+) -> None:
+    """Delete an article from the database.
+
+    Args:
+        article_id (int): ID of the article to delete.
+        db (AsyncSession): Injected async database session.
+
+    Raises:
+        HTTPException: 404 if article does not exist.
+    """
     article = await ArticleService.get_article(db=db, article_id=article_id)
     if not article:
         raise HTTPException(

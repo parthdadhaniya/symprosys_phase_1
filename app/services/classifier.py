@@ -1,18 +1,23 @@
+"""Deterministic rule-based article classification engine.
+
+Categorizes news articles across defined business domains (Automotive, Technology,
+Healthcare, Finance, Energy, and Business) without requiring external ML models or LLMs.
+"""
+
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 class ArticleClassifier:
-    """
-    Deterministic rule-based category classifier for news articles.
-    
+    """Deterministic, rule-based category classifier for news articles.
+
     Category definitions:
-    - Automotive: Electric vehicles, automotive manufacturing, vehicle transport.
-    - Technology: AI, cloud, software, chips, digital platforms.
-    - Healthcare: Pharmaceuticals, biotech, clinical, medical devices.
-    - Finance: Capital markets, banking, fintech, investment, revenue.
-    - Energy: Renewables, oil, gas, power grid, utilities.
-    - Business: Default category for corporate investments, mergers, and commerce.
+        - Automotive: Electric vehicles, automotive manufacturing, vehicle transport.
+        - Technology: AI, cloud, software, chips, digital platforms.
+        - Healthcare: Pharmaceuticals, biotech, clinical, medical devices.
+        - Finance: Capital markets, banking, fintech, investment, revenue.
+        - Energy: Renewables, oil, gas, power grid, utilities.
+        - Business: Default category for corporate investments, mergers, and commerce.
     """
 
     CATEGORIES_TAXONOMY: Dict[str, Dict[str, int]] = {
@@ -97,9 +102,16 @@ class ArticleClassifier:
 
     @classmethod
     def classify(cls, title: str, content: Optional[str] = None) -> str:
-        """
-        Classify an article into a deterministic category based on title and content keywords.
+        """Classify an article into a deterministic category based on title and content keywords.
+
         Title matches are weighted 2.5x higher than content matches.
+
+        Args:
+            title (str): Article title/headline.
+            content (Optional[str]): Full text of the article.
+
+        Returns:
+            str: The selected category name.
         """
         category, _ = cls.classify_with_scores(title=title, content=content)
         return category
@@ -108,6 +120,15 @@ class ArticleClassifier:
     def classify_with_scores(
         cls, title: str, content: Optional[str] = None
     ) -> Tuple[str, Dict[str, float]]:
+        """Calculate weighted category scores and determine the best-fit category.
+
+        Args:
+            title (str): Article title/headline.
+            content (Optional[str]): Full text of the article.
+
+        Returns:
+            Tuple[str, Dict[str, float]]: Best category name and the dictionary of scores per category.
+        """
         scores: Dict[str, float] = {cat: 0.0 for cat in cls.CATEGORIES_TAXONOMY}
         normalized_title = (title or "").lower()
         normalized_content = (content or "").lower()
@@ -115,7 +136,7 @@ class ArticleClassifier:
         for category, keyword_weights in cls.CATEGORIES_TAXONOMY.items():
             for keyword, weight in keyword_weights.items():
                 pattern = r"\b" + re.escape(keyword) + r"\b"
-                
+
                 # Title matches with 2.5x multiplier
                 title_matches = len(re.findall(pattern, normalized_title))
                 scores[category] += title_matches * (weight * 2.5)
@@ -128,9 +149,8 @@ class ArticleClassifier:
         # Find the category with maximum score
         best_category = max(scores, key=lambda c: scores[c])
 
-        # If highest score is 0 or very low, fallback to Business if corporate indicators present, else General
+        # If highest score is 0 or very low, fallback to Business
         if scores[best_category] <= 0:
             return "Business", scores
 
         return best_category, scores
-

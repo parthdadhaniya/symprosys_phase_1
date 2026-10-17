@@ -1,3 +1,9 @@
+"""Celery asynchronous tasks and core article processing logic.
+
+Executes deterministic classification and summarization, manages article state transitions
+(Pending -> Processing -> Completed/Failed), and handles automatic retries with exponential backoff.
+"""
+
 import logging
 from typing import Any, Dict
 from celery.exceptions import MaxRetriesExceededError
@@ -12,9 +18,23 @@ logger = logging.getLogger(__name__)
 
 
 def process_article_sync(article_id: int) -> Dict[str, Any]:
-    """
-    Synchronous processor core function for article classification and summarization.
-    Callable by Celery worker or as a fallback.
+    """Execute synchronous article classification and summarization workflow.
+
+    1. Retrieves the article from the database.
+    2. Updates status to 'Processing'.
+    3. Runs deterministic classification on headline and body.
+    4. Runs deterministic extractive summarization.
+    5. Saves category and summary, updating status to 'Completed'.
+    6. On unrecoverable error, updates status to 'Failed'.
+
+    Args:
+        article_id (int): ID of the article to process.
+
+    Raises:
+        Exception: Re-raises caught exceptions to trigger Celery retry mechanisms.
+
+    Returns:
+        Dict[str, Any]: Status summary dictionary with article details.
     """
     db = SyncSessionLocal()
     try:
@@ -77,9 +97,16 @@ def process_article_sync(article_id: int) -> Dict[str, Any]:
     default_retry_delay=5,
 )
 def process_article_task(self, article_id: int) -> Dict[str, Any]:
-    """
-    Celery task that asynchronously classifies and summarizes a news article.
+    """Celery task that asynchronously classifies and summarizes a news article.
+
     Implements automatic retries with exponential backoff on transient errors.
+
+    Args:
+        self: Bound Celery Task instance.
+        article_id (int): Primary key ID of the article to process.
+
+    Returns:
+        Dict[str, Any]: Processing result metadata dictionary.
     """
     try:
         return process_article_sync(article_id=article_id)
@@ -96,4 +123,3 @@ def process_article_task(self, article_id: int) -> Dict[str, Any]:
                 "article_id": article_id,
                 "error": str(exc),
             }
-
