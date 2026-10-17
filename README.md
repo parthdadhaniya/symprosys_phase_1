@@ -157,7 +157,7 @@ Before starting, ensure you have installed:
 
 ### 1. Clone or Open the Project
 ```bash
-cd "c:\My Projects\simprosys_test"
+cd "simprosys_test"
 ```
 
 ### 2. Create and Activate a Virtual Environment
